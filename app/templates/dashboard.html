@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equipment Monitoring Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary-50: #f0f9ff;
+            --primary-100: #e0f2fe;
+            --primary-200: #bae6fd;
+            --primary-300: #7dd3fc;
+            --primary-400: #38bdf8;
+            --primary-500: #0ea5e9;
+            --primary-600: #0284c7;
+            --primary-700: #0369a1;
+            --primary-800: #075985;
+            --primary-900: #0c4a6e;
+        }
+        .bg-gradient {
+            background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-700) 100%);
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .status-online {
+            @apply bg-green-100 text-green-800;
+        }
+        .status-issue {
+            @apply bg-red-100 text-red-800;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow">
+        <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
+            <h1 class="text-3xl font-bold text-gray-900">
+                <i class="fas fa-tachometer-alt text-blue-600 mr-2"></i>
+                Equipment Monitor
+            </h1>
+            <div class="flex items-center space-x-4">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    <span class="w-2 h-2 mr-2 rounded-full bg-blue-500"></span>
+                    <span id="connection-status">Connected</span>
+                </span>
+                <span id="current-time" class="text-gray-600"></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                        <i class="fas fa-server text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Total Equipment</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="total-equipment">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100 text-green-600">
+                        <i class="fas fa-check-circle text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Online</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="online-count">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-red-100 text-red-600">
+                        <i class="fas fa-exclamation-triangle text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Issues</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="issues-count">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Equipment List -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-medium text-gray-900">Equipment List</h2>
+                    </div>
+                    <div class="divide-y divide-gray-200" id="equipment-list">
+                        <!-- Equipment items will be added here by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Rate Chart -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-medium text-gray-900">Data Rate Monitor</h2>
+                        <select id="equipment-selector" class="mt-1 block w-1/3 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                            <!-- Options will be added by JavaScript -->
+                        </select>
+                    </div>
+                    <div class="h-80">
+                        <canvas id="dataRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global variables
+        let dataRateChart;
+        let currentEquipmentId = 1;
+        let updateInterval;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            
+            // Initial fetch of equipment data
+            fetchEquipmentData();
+            
+            // Set up periodic refresh
+            updateInterval = setInterval(fetchEquipmentData, 2000);
+            
+            // Set up event listeners
+            document.getElementById('equipment-selector').addEventListener('change', function(e) {
+                currentEquipmentId = parseInt(e.target.value);
+                updateChart();
+            });
+        });
+
+        // Update current time
+        function updateCurrentTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleTimeString();
+        }
+
+        // Fetch equipment data from the API
+        async function fetchEquipmentData() {
+            try {
+                const response = await fetch('/api/equipment');
+                const data = await response.json();
+                updateEquipmentList(data);
+                updateDashboardStats(data);
+                
+                // Update the equipment selector if it's empty
+                const selector = document.getElementById('equipment-selector');
+                if (selector.options.length === 0) {
+                    data.forEach(eq => {
+                        const option = document.createElement('option');
+                        option.value = eq.id;
+                        option.textContent = eq.name;
+                        selector.appendChild(option);
+                    });
+                    currentEquipmentId = data[0]?.id || 1;
+                }
+                
+                // Update the chart with the latest data
+                updateChart();
+                
+            } catch (error) {
+                console.error('Error fetching equipment data:', error);
+                document.getElementById('connection-status').textContent = 'Disconnected';
+                document.getElementById('connection-status').classList.remove('bg-green-100', 'text-green-800');
+                document.getElementById('connection-status').classList.add('bg-red-100', 'text-red-800');
+            }
+        }
+
+        // Update the equipment list
+        function updateEquipmentList(equipment) {
+            const container = document.getElementById('equipment-list');
+            container.innerHTML = '';
+            
+            equipment.forEach(eq => {
+                // Update status based on data rate
+                if (eq.data_rate > 80) {
+                    eq.status = "issue";
+                } else {
+                    eq.status = "online";
+                }
+                
+                const statusClass = eq.status === 'online' ? 'status-online' : 'status-issue';
+                const statusIcon = eq.status === 'online' ? 'check-circle' : 'exclamation-triangle';
+                
+                const equipmentItem = document.createElement('div');
+                equipmentItem.className = 'p-4 hover:bg-gray-50 cursor-pointer';
+                equipmentItem.dataset.id = eq.id;
+                equipmentItem.onclick = () => {
+                    currentEquipmentId = eq.id;
+                    document.getElementById('equipment-selector').value = eq.id;
+                    updateChart();
+                };
+                
+                equipmentItem.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-${eq.name.toLowerCase().includes('router') ? 'router' : 
+                                            eq.name.toLowerCase().includes('switch') ? 'network-wired' : 'fire'}
+                                text-gray-500 text-xl"></i>
+                        </div>
+                        <div class="ml-4 flex-1">
+                            <div class="flex justify-between">
+                                <h3 class="text-sm font-medium text-gray-900">${eq.name}</h3>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+                                    <i class="fas fa-${statusIcon} mr-1"></i>
+                                    ${eq.status === 'online' ? 'Online' : 'Issue'}
+                                </span>
+                            </div>
+                            <div class="mt-1 text-sm text-gray-500">
+                                <div>Data Rate: <span class="font-medium">${eq.data_rate} Mbps</span></div>
+                                <div class="text-xs text-gray-400">Last checked: ${eq.last_checked}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(equipmentItem);
+            });
+        }
+
+        // Update dashboard statistics
+        function updateDashboardStats(equipment) {
+            const total = equipment.length;
+            const online = equipment.filter(eq => eq.status === 'online').length;
+            const issues = equipment.length - online;
+            
+            document.getElementById('total-equipment').textContent = total;
+            document.getElementById('online-count').textContent = online;
+            document.getElementById('issues-count').textContent = issues;
+        }
+
+        // Update the chart with data for the selected equipment
+        async function updateChart() {
+            try {
+                const response = await fetch(`/api/equipment/${currentEquipmentId}`);
+                const equipment = await response.json();
+                
+                if (!dataRateChart) {
+                    createChart(equipment);
+                } else {
+                    updateChartData(equipment);
+                }
+            } catch (error) {
+                console.error('Error updating chart:', error);
+            }
+        }
+
+        // Create the initial chart
+        function createChart(equipment) {
+            const ctx = document.getElementById('dataRateChart').getContext('2d');
+            
+            dataRateChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Data Rate (Mbps)',
+                        data: [],
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#0ea5e9',
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value + ' Mbps';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        title: {
+                            display: true,
+                            text: `${equipment.name} - Data Rate`,
+                            font: {
+                                size: 16
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        // Update chart with new data
+        function updateChartData(equipment) {
+            if (!dataRateChart) return;
+            
+            // Update chart title
+            dataRateChart.options.plugins.title.text = `${equipment.name} - Data Rate`;
+            
+            // Add new data point
+            const now = new Date().toLocaleTimeString();
+            
+            if (dataRateChart.data.labels.length >= 15) {
+                dataRateChart.data.labels.shift();
+                dataRateChart.data.datasets[0].data.shift();
+            }
+            
+            dataRateChart.data.labels.push(now);
+            dataRateChart.data.datasets[0].data.push(equipment.data_rate);
+            
+            // Update the chart
+            dataRateChart.update();
+        }
+    </script>
+</body>
+</html>
