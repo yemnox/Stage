@@ -3,9 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Equipment Monitoring Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>Tableau de bord de surveillance des équipements</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Update user info from session
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get user info from template variables
+            const userName = '{{ user_name }}' || 'Utilisateur';
+            const userEmail = '{{ user_email }}' || 'user@example.com';
+            
+            // Update UI with user info
+            document.getElementById('userName').textContent = userName;
+            document.getElementById('userInitials').textContent = userName.charAt(0).toUpperCase();
+            
+            // Update time every second
+            function updateTime() {
+                const now = new Date();
+                document.getElementById('current-time').textContent = now.toLocaleTimeString('fr-FR');
+            }
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // Handle dropdown menu
+            const dropdownButton = document.querySelector('.group');
+            const dropdownMenu = document.querySelector('.group .hidden');
+            
+            // Toggle dropdown on button click
+            dropdownButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                dropdownMenu.classList.toggle('hidden');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!dropdownButton.contains(e.target)) {
+                    dropdownMenu.classList.add('hidden');
+                }
+            });
+            
+            // Prevent dropdown from closing when clicking inside it
+            dropdownMenu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            
+            // Set up logout function
+            window.logout = async function() {
+                try {
+                    const response = await fetch('/logout', {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                    // Always redirect to home page, regardless of response
+                    window.location.href = '/';
+                } catch (error) {
+                    console.error('Logout failed:', error);
+                    window.location.href = '/';
+                }
+            };
+        });
+        
+        async function logout() {
+            try {
+                const response = await fetch('/logout', { 
+                    method: 'POST',
+                    credentials: 'same-origin' // Important for sending cookies
+                });
+                if (response.redirected) {
+                    window.location.href = response.url;
+                } else {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Error during logout:', error);
+                window.location.href = '/login';
+            }
+        }
+        
+        function initializeDashboard() {
+            // Any dashboard initialization code can go here
+            console.log('Dashboard initialized');
+        }
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         :root {
@@ -41,15 +121,29 @@
 <body class="bg-gray-50">
     <!-- Header -->
     <header class="bg-white shadow">
-        <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
             <h1 class="text-3xl font-bold text-gray-900">
-                <i class="fas fa-tachometer-alt text-blue-600 mr-2"></i>
-                Equipment Monitor
+                <i class="fas fa-tachometer-alt mr-2 text-blue-600"></i>
+                Tableau de bord de surveillance
             </h1>
             <div class="flex items-center space-x-4">
+                <div class="relative group" style="cursor: pointer;">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold" id="userInitials">
+                            U
+                        </div>
+                        <span class="text-gray-700 font-medium" id="userName">Utilisateur</span>
+                        <i class="fas fa-chevron-down text-gray-500 text-xs"></i>
+                    </div>
+                    <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                        <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onclick="event.preventDefault(); logout();">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Déconnexion
+                        </a>
+                    </div>
+                </div>
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                     <span class="w-2 h-2 mr-2 rounded-full bg-blue-500"></span>
-                    <span id="connection-status">Connected</span>
+                    <span id="connection-status">Connecté</span>
                 </span>
                 <span id="current-time" class="text-gray-600"></span>
             </div>
@@ -66,7 +160,7 @@
                         <i class="fas fa-server text-xl"></i>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-500">Total Equipment</p>
+                        <p class="text-sm font-medium text-gray-500">Total des équipements</p>
                         <p class="text-2xl font-semibold text-gray-900" id="total-equipment">0</p>
                     </div>
                 </div>
@@ -77,7 +171,7 @@
                         <i class="fas fa-check-circle text-xl"></i>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-500">Online</p>
+                        <p class="text-sm font-medium text-gray-500">En ligne</p>
                         <p class="text-2xl font-semibold text-gray-900" id="online-count">0</p>
                     </div>
                 </div>
@@ -88,7 +182,7 @@
                         <i class="fas fa-exclamation-triangle text-xl"></i>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-500">Issues</p>
+                        <p class="text-sm font-medium text-gray-500">Problèmes</p>
                         <p class="text-2xl font-semibold text-gray-900" id="issues-count">0</p>
                     </div>
                 </div>
@@ -101,7 +195,7 @@
             <div class="lg:col-span-1">
                 <div class="bg-white rounded-lg shadow overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-200">
-                        <h2 class="text-lg font-medium text-gray-900">Equipment List</h2>
+                        <h2 class="text-lg font-medium text-gray-900 mb-4">Aperçu des équipements</h2>
                     </div>
                     <div class="divide-y divide-gray-200" id="equipment-list">
                         <!-- Equipment items will be added here by JavaScript -->
@@ -113,8 +207,9 @@
             <div class="lg:col-span-2">
                 <div class="bg-white rounded-lg shadow p-6">
                     <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-lg font-medium text-gray-900">Data Rate Monitor</h2>
+                        <h2 class="text-lg font-medium text-gray-900 mb-4">Historique du débit de données</h2>
                         <select id="equipment-selector" class="mt-1 block w-1/3 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                            <option value="">Sélectionner un équipement</option>
                             <!-- Options will be added by JavaScript -->
                         </select>
                     </div>
@@ -166,7 +261,7 @@
                 
                 // Update the equipment selector if it's empty
                 const selector = document.getElementById('equipment-selector');
-                if (selector.options.length === 0) {
+                if (selector.options.length === 1) {
                     data.forEach(eq => {
                         const option = document.createElement('option');
                         option.value = eq.id;
