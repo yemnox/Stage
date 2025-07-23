@@ -1,2 +1,2 @@
 .\venv\Scripts\activate
-uvicorn app.main:app --reload --port 3000
+uvicorn app.main:app --reload --port 4000

@@ -283,7 +283,35 @@
         let currentEquipmentId = 1;
         let updateInterval;
 
-        // Fetch available filters from the backend
+        // Update atelier dropdown based on selected ligne
+        function updateAtelierDropdown(selectedLigne, selectedAtelier = '') {
+            const atelierSelect = document.getElementById('atelier');
+            if (!atelierSelect) return;
+            
+            // Clear existing options
+            atelierSelect.innerHTML = '';
+            
+            // Add empty option
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'Tous les ateliers';
+            atelierSelect.appendChild(emptyOption);
+            
+            // Add atelier options if a ligne is selected
+            if (selectedLigne && availableFilters.ateliers[selectedLigne]) {
+                availableFilters.ateliers[selectedLigne].forEach(atelier => {
+                    const option = document.createElement('option');
+                    option.value = atelier.value;
+                    option.textContent = atelier.label;
+                    if (atelier.value === selectedAtelier) {
+                        option.selected = true;
+                    }
+                    atelierSelect.appendChild(option);
+                });
+            }
+        }
+        
+        // Fetch and populate filter options
         async function fetchFilters() {
             try {
                 const response = await fetch('/api/filters');
@@ -300,63 +328,54 @@
                 // Populate ligne dropdown
                 const ligneSelect = document.getElementById('ligne');
                 if (ligneSelect) {
-                    // Clear existing options except the first one
-                    while (ligneSelect.options.length > 1) {
-                        ligneSelect.remove(1);
-                    }
+                    // Clear existing options
+                    ligneSelect.innerHTML = '';
                     
-                    // Add new options
+                    // Add empty option
+                    const emptyOption = document.createElement('option');
+                    emptyOption.value = '';
+                    emptyOption.textContent = 'Toutes les lignes';
+                    ligneSelect.appendChild(emptyOption);
+                    
+                    // Add ligne options
                     availableFilters.lignes.forEach(ligne => {
                         const option = document.createElement('option');
                         option.value = ligne.value;
                         option.textContent = ligne.label;
-                        option.selected = (ligne.value === selectedLigne);
+                        if (ligne.value === selectedLigne) {
+                            option.selected = true;
+                        }
                         ligneSelect.appendChild(option);
                     });
                     
-                    // Trigger change event to update atelier dropdown
-                    ligneSelect.dispatchEvent(new Event('change'));
+                    // Add event listener for ligne change
+                    ligneSelect.addEventListener('change', (e) => {
+                        const selectedLigne = e.target.value;
+                        updateAtelierDropdown(selectedLigne);
+                        filterEquipmentList(selectedLigne, '');
+                    });
                 }
                 
-                // Update atelier dropdown based on selected ligne
+                // Initialize atelier dropdown
+                updateAtelierDropdown(selectedLigne, selectedAtelier);
+                
+                // Add event listener for atelier change
                 const atelierSelect = document.getElementById('atelier');
                 if (atelierSelect) {
-                    atelierSelect.innerHTML = '<option value="">Tous les ateliers</option>';
-                    
-                    // Add event listener to update atelier dropdown when ligne changes
-                    const ligneSelect = document.getElementById('ligne');
-                    if (ligneSelect) {
-                        const updateAtelierOptions = () => {
-                            const selectedLigne = ligneSelect.value;
-                            atelierSelect.innerHTML = '<option value="">Tous les ateliers</option>';
-                            
-                            if (selectedLigne && availableFilters.ateliers[selectedLigne]) {
-                                availableFilters.ateliers[selectedLigne].forEach(atelier => {
-                                    const option = document.createElement('option');
-                                    option.value = atelier.value;
-                                    option.textContent = atelier.label;
-                                    option.selected = (atelier.value === selectedAtelier && selectedLigne === selectedLigne);
-                                    atelierSelect.appendChild(option);
-                                });
-                            }
-                            
-                            // Update hidden fields
-                            document.getElementById('selected-ligne').value = selectedLigne;
-                            document.getElementById('selected-atelier').value = atelierSelect.value;
-                            
-                            // Update equipment list
-                            filterEquipmentList(selectedLigne, atelierSelect.value);
-                        };
-                        
-                        ligneSelect.addEventListener('change', updateAtelierOptions);
-                        atelierSelect.addEventListener('change', updateAtelierOptions);
-                        
-                        // Initial update
-                        updateAtelierOptions();
-                    }
+                    atelierSelect.addEventListener('change', (e) => {
+                        const selectedAtelier = e.target.value;
+                        filterEquipmentList(
+                            document.getElementById('ligne')?.value || '',
+                            selectedAtelier
+                        );
+                    });
                 }
                 
+                // Apply initial filters
+                filterEquipmentList(selectedLigne, selectedAtelier);
+                
                 return true;
+                
             } catch (error) {
                 console.error('Error fetching filters:', error);
                 return false;
@@ -379,7 +398,7 @@
                     (!ligne || itemLigne === ligne) && 
                     (!atelier || itemAtelier === atelier);
                 
-                item.style.display = showItem ? 'flex' : 'none';
+                item.style.display = showItem ? 'block' : 'none';
                 if (showItem) visibleCount++;
             });
             
@@ -396,6 +415,15 @@
             
             const newUrl = `${window.location.pathname}?${params.toString()}`;
             window.history.pushState({}, '', newUrl);
+            
+            // Update the chart if needed
+            if (visibleCount > 0) {
+                const firstVisible = equipmentList.querySelector('.equipment-item[style*="display: block"]');
+                if (firstVisible) {
+                    currentEquipmentId = parseInt(firstVisible.getAttribute('data-id'));
+                    updateChart();
+                }
+            }
         }
         
         // Initialize the dashboard

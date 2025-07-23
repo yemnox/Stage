@@ -181,26 +181,13 @@ data_history = {
     for eq in equipments
 }
 
-LIGNES = [
-    {"value": "l1", "label": "Ligne 1"},
-    {"value": "l2", "label": "Ligne 2"},
-    {"value": "l3", "label": "Ligne 3"},
-]
-
-ATELIERS = {
-    "l1": [
-        {"value": "a1", "label": "Atelier A"},
-        {"value": "a2", "label": "Atelier B"},
-    ],
-    "l2": [
-        {"value": "a3", "label": "Atelier C"},
-        {"value": "a4", "label": "Atelier D"},
-    ],
-    "l3": [
-        {"value": "a5", "label": "Atelier E"},
-        {"value": "a6", "label": "Atelier F"},
-    ]
-}
+@app.get("/api/filters")
+async def get_filters():
+    from .models import LIGNES, ATELIERS
+    return {
+        "lignes": LIGNES,
+        "ateliers": ATELIERS
+    }
 
 # Authentication routes
 @app.get("/windows-auth")
@@ -576,4 +563,4 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=3000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=4000, reload=True)
