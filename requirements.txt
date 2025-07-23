@@ -19,6 +19,7 @@ httpx>=0.25.1,<1.0.0
 # Security
 python-jose[cryptography]>=3.3.0,<4.0.0
 passlib[bcrypt]>=1.7.4,<2.0.0
+pywin32>=306,<308; sys_platform == 'win32'
 
 # Performance
 uvloop>=0.17.0,<1.0.0; sys_platform != 'win32'
@@ -27,3 +28,6 @@ httptools>=0.5.0,<1.0.0
 # Additional for dashboard
 jinja2>=3.0.0,<4.0.0
 aiofiles>=23.1.0,<24.0.0
+
+# Windows Authentication
+python-ntlm3>=1.0.2,<2.0.0

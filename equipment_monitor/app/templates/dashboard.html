@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de bord de surveillance des équipements</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Update user info from session
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get user info from template variables
+            const userName = '{{ user_name }}' || 'Utilisateur';
+            const userEmail = '{{ user_email }}' || 'user@example.com';
+            
+            // Update UI with user info
+            document.getElementById('userName').textContent = userName;
+            document.getElementById('userInitials').textContent = userName.charAt(0).toUpperCase();
+            
+            // Update time every second
+            function updateTime() {
+                const now = new Date();
+                document.getElementById('current-time').textContent = now.toLocaleTimeString('fr-FR');
+            }
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // Handle dropdown menu
+            const dropdownButton = document.querySelector('.group');
+            const dropdownMenu = document.querySelector('.group .hidden');
+            
+            // Toggle dropdown on button click
+            dropdownButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                dropdownMenu.classList.toggle('hidden');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!dropdownButton.contains(e.target)) {
+                    dropdownMenu.classList.add('hidden');
+                }
+            });
+            
+            // Prevent dropdown from closing when clicking inside it
+            dropdownMenu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            
+            // Set up logout function
+            window.logout = async function() {
+                try {
+                    const response = await fetch('/logout', {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                    // Always redirect to home page, regardless of response
+                    window.location.href = '/';
+                } catch (error) {
+                    console.error('Logout failed:', error);
+                    window.location.href = '/';
+                }
+            };
+        });
+        
+        async function logout() {
+            try {
+                const response = await fetch('/logout', { 
+                    method: 'POST',
+                    credentials: 'same-origin' // Important for sending cookies
+                });
+                if (response.redirected) {
+                    window.location.href = response.url;
+                } else {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Error during logout:', error);
+                window.location.href = '/login';
+            }
+        }
+        
+        function initializeDashboard() {
+            // Any dashboard initialization code can go here
+            console.log('Dashboard initialized');
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary-50: #f0f9ff;
+            --primary-100: #e0f2fe;
+            --primary-200: #bae6fd;
+            --primary-300: #7dd3fc;
+            --primary-400: #38bdf8;
+            --primary-500: #0ea5e9;
+            --primary-600: #0284c7;
+            --primary-700: #0369a1;
+            --primary-800: #075985;
+            --primary-900: #0c4a6e;
+        }
+        .bg-gradient {
+            background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-700) 100%);
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .status-online {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        .status-issue {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <h1 class="text-3xl font-bold text-gray-900">
+                    Tableau de bord
+                </h1>
+                {% if current_user and (current_user.role == 'admin' or 'MANAGE_USERS' in (current_user.permissions or [])) %}
+                <a href="/admin/dashboard" class="ml-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                    Admin Dashboard
+                </a>
+                {% endif %}
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="relative group" style="cursor: pointer;">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold" id="userInitials">
+                            U
+                        </div>
+                        <span class="text-gray-700 font-medium" id="userName">Utilisateur</span>
+                        <i class="fas fa-chevron-down text-gray-500 text-xs"></i>
+                    </div>
+                    <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 hidden">
+                        <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onclick="event.preventDefault(); logout();">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Déconnexion
+                        </a>
+                    </div>
+                </div>
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    <span class="w-2 h-2 mr-2 rounded-full bg-blue-500"></span>
+                    <span id="connection-status">Connecté</span>
+                </span>
+                <span id="current-time" class="text-gray-600"></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <!-- Top Bar -->
+        <div class="flex flex-col md:flex-row gap-6 mb-8">
+            <!-- Filters -->
+            <div class="flex-1 bg-white rounded-lg shadow p-6">
+                <div class="flex space-x-4">
+                    <div class="flex-1">
+                        <label for="ligne" class="block text-sm font-medium text-gray-700 mb-2">Ligne</label>
+                        <select id="ligne" name="ligne" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                onchange="this.form.submit()">
+                            <option value="">Toutes les lignes</option>
+                            {% for ligne in lignes %}
+                            <option value="{{ ligne.value }}" {% if ligne.value == selected_ligne %}selected{% endif %}>
+                                {{ ligne.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label for="atelier" class="block text-sm font-medium text-gray-700 mb-2">Atelier</label>
+                        <select id="atelier" name="atelier" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                onchange="this.form.submit()">
+                            <option value="">Tous les ateliers</option>
+                            {% if selected_ligne %}
+                                {% for atelier in ateliers[selected_ligne] %}
+                                <option value="{{ atelier.value }}" {% if atelier.value == selected_atelier %}selected{% endif %}>
+                                    {{ atelier.label }}
+                                </option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="flex-1 flex space-x-4">
+                <!-- Total Equipment -->
+                <div class="flex-1 bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                            <i class="fas fa-server text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-sm font-medium text-gray-500">Équipements</h3>
+                            <p id="total-equipment" class="text-3xl font-semibold text-gray-900">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Issues -->
+                <div class="flex-1 bg-white rounded-lg shadow p-6 stats-issues">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-red-100 text-red-600">
+                            <i class="fas fa-exclamation-circle text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-sm font-medium text-gray-500">Problèmes</h3>
+                            <p class="text-3xl font-semibold text-gray-900">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Online -->
+                <div class="flex-1 bg-white rounded-lg shadow p-6 stats-online">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-green-100 text-green-600">
+                            <i class="fas fa-check-circle text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-sm font-medium text-gray-500">En ligne</h3>
+                            <p class="text-3xl font-semibold text-gray-900">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Equipment List -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow overflow-hidden h-full flex flex-col">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-medium text-gray-900">Liste des équipements</h2>
+                        <p class="mt-1 text-sm text-gray-500"><span id="equipment-count">0 équipements</span></p>
+                    </div>
+                    <div class="divide-y divide-gray-200 overflow-y-auto flex-1" id="equipment-list">
+                        <!-- Equipment items will be populated by JavaScript -->
+                        <div class="p-4 text-center text-gray-500">
+                            <p>Chargement des équipements...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Rate Chart -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-medium text-gray-900 mb-4">Historique du débit de données</h2>
+                        <select id="equipment-selector" class="mt-1 block w-1/3 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                            <option value="">Sélectionner un équipement</option>
+                            <!-- Options will be added by JavaScript -->
+                        </select>
+                    </div>
+                    <div class="h-80">
+                        <canvas id="dataRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global variables
+        let dataRateChart;
+        let availableFilters = {
+            lignes: [],
+            ateliers: {}
+        };
+        let currentEquipmentId = 1;
+        let updateInterval;
+
+        // Fetch available filters from the backend
+        async function fetchFilters() {
+            try {
+                const response = await fetch('/api/filters');
+                if (!response.ok) throw new Error('Failed to fetch filters');
+                
+                const data = await response.json();
+                availableFilters = data;
+                
+                // Get URL parameters for selected filters
+                const urlParams = new URLSearchParams(window.location.search);
+                const selectedLigne = urlParams.get('selected_ligne') || '';
+                const selectedAtelier = urlParams.get('selected_atelier') || '';
+                
+                // Populate ligne dropdown
+                const ligneSelect = document.getElementById('ligne');
+                if (ligneSelect) {
+                    // Clear existing options except the first one
+                    while (ligneSelect.options.length > 1) {
+                        ligneSelect.remove(1);
+                    }
+                    
+                    // Add new options
+                    availableFilters.lignes.forEach(ligne => {
+                        const option = document.createElement('option');
+                        option.value = ligne.value;
+                        option.textContent = ligne.label;
+                        option.selected = (ligne.value === selectedLigne);
+                        ligneSelect.appendChild(option);
+                    });
+                    
+                    // Trigger change event to update atelier dropdown
+                    ligneSelect.dispatchEvent(new Event('change'));
+                }
+                
+                // Update atelier dropdown based on selected ligne
+                const atelierSelect = document.getElementById('atelier');
+                if (atelierSelect) {
+                    atelierSelect.innerHTML = '<option value="">Tous les ateliers</option>';
+                    
+                    // Add event listener to update atelier dropdown when ligne changes
+                    const ligneSelect = document.getElementById('ligne');
+                    if (ligneSelect) {
+                        const updateAtelierOptions = () => {
+                            const selectedLigne = ligneSelect.value;
+                            atelierSelect.innerHTML = '<option value="">Tous les ateliers</option>';
+                            
+                            if (selectedLigne && availableFilters.ateliers[selectedLigne]) {
+                                availableFilters.ateliers[selectedLigne].forEach(atelier => {
+                                    const option = document.createElement('option');
+                                    option.value = atelier.value;
+                                    option.textContent = atelier.label;
+                                    option.selected = (atelier.value === selectedAtelier && selectedLigne === selectedLigne);
+                                    atelierSelect.appendChild(option);
+                                });
+                            }
+                            
+                            // Update hidden fields
+                            document.getElementById('selected-ligne').value = selectedLigne;
+                            document.getElementById('selected-atelier').value = atelierSelect.value;
+                            
+                            // Update equipment list
+                            filterEquipmentList(selectedLigne, atelierSelect.value);
+                        };
+                        
+                        ligneSelect.addEventListener('change', updateAtelierOptions);
+                        atelierSelect.addEventListener('change', updateAtelierOptions);
+                        
+                        // Initial update
+                        updateAtelierOptions();
+                    }
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('Error fetching filters:', error);
+                return false;
+            }
+        }
+        
+        // Filter equipment list based on selected filters
+        function filterEquipmentList(ligne, atelier) {
+            const equipmentList = document.getElementById('equipment-list');
+            if (!equipmentList) return;
+            
+            const items = equipmentList.querySelectorAll('.equipment-item');
+            let visibleCount = 0;
+            
+            items.forEach(item => {
+                const itemLigne = item.getAttribute('data-ligne');
+                const itemAtelier = item.getAttribute('data-atelier');
+                
+                const showItem = 
+                    (!ligne || itemLigne === ligne) && 
+                    (!atelier || itemAtelier === atelier);
+                
+                item.style.display = showItem ? 'flex' : 'none';
+                if (showItem) visibleCount++;
+            });
+            
+            // Update the equipment count
+            const countElement = document.getElementById('equipment-count');
+            if (countElement) {
+                countElement.textContent = `${visibleCount} équipement${visibleCount !== 1 ? 's' : ''}`;
+            }
+            
+            // Update URL without page reload
+            const params = new URLSearchParams();
+            if (ligne) params.set('selected_ligne', ligne);
+            if (atelier) params.set('selected_atelier', atelier);
+            
+            const newUrl = `${window.location.pathname}?${params.toString()}`;
+            window.history.pushState({}, '', newUrl);
+        }
+        
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            
+            // Initialize filters and then fetch equipment data
+            fetchFilters().then(() => {
+                fetchEquipmentData();
+                
+                // Refresh data every 5 seconds
+                updateInterval = setInterval(fetchEquipmentData, 5000);
+            });
+        });
+
+        // Update current time
+        function updateCurrentTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleTimeString();
+        }
+
+        // Update connection status
+        function updateConnectionStatus(isConnected) {
+            const statusElement = document.getElementById('connection-status');
+            if (isConnected) {
+                statusElement.textContent = 'Connecté';
+                statusElement.classList.remove('bg-red-100', 'text-red-800');
+                statusElement.classList.add('bg-green-100', 'text-green-800');
+            } else {
+                statusElement.textContent = 'Déconnecté';
+                statusElement.classList.remove('bg-green-100', 'text-green-800');
+                statusElement.classList.add('bg-red-100', 'text-red-800');
+            }
+        }
+
+        // Fetch equipment data from the API
+        async function fetchEquipmentData() {
+            console.log('Fetching equipment data...');
+            try {
+                const startTime = performance.now();
+                const response = await fetch('/api/equipment', {
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                const endTime = performance.now();
+                console.log(`API response received in ${(endTime - startTime).toFixed(2)}ms`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('API Error Response:', errorText);
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Equipment data received:', data);
+                
+                if (!Array.isArray(data)) {
+                    throw new Error('Expected an array of equipment but got:', typeof data);
+                }
+                
+                updateEquipmentList(data);
+                updateDashboardStats(data);
+                
+                // Update the equipment selector if it's empty
+                const selector = document.getElementById('equipment-selector');
+                if (selector && selector.options.length <= 1) {  // Check if selector exists and has 0 or 1 option
+                    // Clear existing options except the first one
+                    while (selector.options.length > 1) {
+                        selector.remove(1);
+                    }
+                    
+                    data.forEach(eq => {
+                        const option = document.createElement('option');
+                        option.value = eq.id;
+                        option.textContent = eq.name || `Equipment ${eq.id}`;
+                        selector.appendChild(option);
+                    });
+                    
+                    if (data.length > 0) {
+                        currentEquipmentId = data[0].id;
+                        selector.value = currentEquipmentId;
+                    }
+                }
+                
+                // Update the chart with the latest data
+                console.log('Updating chart with equipment ID:', currentEquipmentId);
+                await updateChart();
+                updateConnectionStatus(true);
+                
+            } catch (error) {
+                console.error('Error in fetchEquipmentData:', error);
+                updateConnectionStatus(false);
+            }
+            
+            // Schedule next update
+            setTimeout(fetchEquipmentData, 5000);
+        }
+        
+        // Update the equipment list
+        function updateEquipmentList(equipment) {
+            const container = document.getElementById('equipment-list');
+            if (!container) return;
+            
+            // Clear loading message if present
+            container.innerHTML = '';
+            
+            if (!equipment || !Array.isArray(equipment) || equipment.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">Aucun équipement trouvé</p>';
+                updateEquipmentCount(0);
+                return;
+            }
+            
+            // Get current filter values
+            const selectedLigne = document.getElementById('ligne')?.value || '';
+            const selectedAtelier = document.getElementById('atelier')?.value || '';
+            let visibleCount = 0;
+            
+            // Create equipment items
+            equipment.forEach(eq => {
+                const statusClass = eq.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const statusIcon = eq.status === 'online' ? 'check-circle' : 'exclamation-circle';
+                const statusText = eq.status === 'online' ? 'En ligne' : 'Hors ligne';
+                
+                // Format last checked time
+                let lastChecked = 'Inconnue';
+                if (eq.last_checked) {
+                    const date = new Date(eq.last_checked);
+                    if (!isNaN(date.getTime())) {
+                        lastChecked = date.toLocaleTimeString('fr-FR');
+                    }
+                }
+                
+                // Check if item should be visible based on filters
+                const isVisible = 
+                    (!selectedLigne || eq.ligne === selectedLigne) && 
+                    (!selectedAtelier || eq.atelier === selectedAtelier);
+                
+                if (isVisible) visibleCount++;
+                
+                const equipmentItem = document.createElement('div');
+                equipmentItem.className = 'equipment-item p-4 border-b border-gray-200 hover:bg-gray-50 cursor-pointer';
+                equipmentItem.style.display = isVisible ? 'block' : 'none';
+                equipmentItem.setAttribute('data-id', eq.id);
+                equipmentItem.setAttribute('data-ligne', eq.ligne || '');
+                equipmentItem.setAttribute('data-atelier', eq.atelier || '');
+                
+                // Add click handler to select equipment
+                equipmentItem.addEventListener('click', () => {
+                    currentEquipmentId = eq.id;
+                    updateChart();
+                    
+                    // Highlight selected equipment
+                    document.querySelectorAll('.equipment-item').forEach(item => {
+                        item.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-500');
+                    });
+                    equipmentItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
+                });
+                
+                equipmentItem.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full ${eq.status === 'online' ? 'bg-green-100' : 'bg-red-100'} flex items-center justify-center">
+                            <i class="fas fa-${eq.type === 'server' ? 'server' : 'network-wired'} ${eq.status === 'online' ? 'text-green-600' : 'text-red-600'}"></i>
+                        </div>
+                        <div class="ml-4 flex-1 min-w-0">
+                            <div class="flex justify-between items-center">
+                                <h3 class="text-sm font-medium text-gray-900 truncate">${eq.name || 'Équipement sans nom'}</h3>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+                                    <i class="fas fa-${statusIcon} mr-1"></i>
+                                    ${statusText}
+                                </span>
+                            </div>
+                            <div class="mt-1 text-sm text-gray-500">
+                                <div class="flex justify-between">
+                                    <span>Débit: <span class="font-medium">${eq.data_rate || 0} Mbps</span></span>
+                                    <span class="text-xs text-gray-400">${lastChecked}</span>
+                                </div>
+                                ${eq.ligne || eq.atelier ? `
+                                <div class="text-xs text-gray-400 mt-1">
+                                    ${eq.ligne ? `<span class="inline-block bg-gray-100 rounded px-2 py-0.5">${eq.ligne}</span>` : ''}
+                                    ${eq.atelier ? `<span class="inline-block bg-gray-100 rounded px-2 py-0.5 ml-1">${eq.atelier}</span>` : ''}
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(equipmentItem);
+            });
+            
+            // Update the equipment count
+            updateEquipmentCount(visibleCount);
+            
+            // Select first equipment by default if none selected
+            if (equipment.length > 0 && !currentEquipmentId) {
+                currentEquipmentId = equipment[0].id;
+                const firstItem = container.querySelector('.equipment-item');
+                if (firstItem) {
+                    firstItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
+                    updateChart();
+                }
+            }
+        }
+        
+        // Update the equipment count display
+        function updateEquipmentCount(count) {
+            const countElement = document.getElementById('equipment-count');
+            if (countElement) {
+                countElement.textContent = `${count} équipement${count !== 1 ? 's' : ''}`;
+            }
+        }
+        
+        // Update dashboard statistics
+        function updateDashboardStats(equipment) {
+            if (!equipment || !Array.isArray(equipment)) {
+                console.warn('Invalid equipment data:', equipment);
+                return;
+            }
+            
+            if (!equipment || !Array.isArray(equipment)) {
+                console.warn('Invalid equipment data:', equipment);
+                return;
+            }
+            
+            try {
+                const total = equipment.length;
+                const online = equipment.filter(eq => eq.status === 'online').length;
+                const issues = total - online;
+                
+                // Update the stats cards in the template
+                const totalElement = document.getElementById('total-equipment') || 
+                                   document.querySelector('.stats-total .text-3xl');
+                const onlineElement = document.querySelector('.stats-online .text-3xl');
+                const issuesElement = document.querySelector('.stats-issues .text-3xl');
+                
+                if (totalElement) totalElement.textContent = total;
+                if (onlineElement) onlineElement.textContent = online;
+                if (issuesElement) issuesElement.textContent = issues;
+                
+                console.log('Dashboard stats updated:', { total, online, issues });
+                return { total, online, issues };
+            } catch (error) {
+                console.error('Error updating dashboard stats:', error);
+                return null;
+            }
+        }
+
+        // Update the chart with data for the selected equipment
+        async function updateChart() {
+            if (!currentEquipmentId) {
+                console.warn('No equipment ID selected for chart update');
+                return;
+            }
+            
+            console.log(`Updating chart for equipment ID: ${currentEquipmentId}`);
+            
+            try {
+                const response = await fetch(`/api/equipment/${currentEquipmentId}`, {
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Chart API Error:', response.status, errorText);
+                    throw new Error(`Chart API Error: ${response.status} ${response.statusText}`);
+                }
+                
+                const equipment = await response.json();
+                console.log('Chart data received:', equipment);
+                
+                if (!equipment) {
+                    throw new Error('No equipment data received for chart');
+                }
+                
+                if (!dataRateChart) {
+                    console.log('Creating new chart');
+                    createChart(equipment);
+                } else {
+                    console.log('Updating existing chart');
+                    updateChartData(equipment);
+                }
+                
+                updateConnectionStatus(true);
+                return true;
+            } catch (error) {
+                console.error('Error in updateChart:', error);
+                updateConnectionStatus(false);
+                return false;
+            }
+        }
+
+        // Create the initial chart
+        function createChart(equipment) {
+            const ctx = document.getElementById('dataRateChart').getContext('2d');
+            
+            dataRateChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Data Rate (Mbps)',
+                        data: [],
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#0ea5e9',
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value + ' Mbps';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        title: {
+                            display: true,
+                            text: `${equipment.name} - Data Rate`,
+                            font: {
+                                size: 16
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        // Update chart with new data
+        function updateChartData(equipment) {
+            if (!dataRateChart) return;
+            
+            // Update chart title
+            dataRateChart.options.plugins.title.text = `${equipment.name} - Data Rate`;
+            
+            // Add new data point
+            const now = new Date().toLocaleTimeString();
+            
+            if (dataRateChart.data.labels.length >= 15) {
+                dataRateChart.data.labels.shift();
+                dataRateChart.data.datasets[0].data.shift();
+            }
+            
+            dataRateChart.data.labels.push(now);
+            dataRateChart.data.datasets[0].data.push(equipment.data_rate);
+            
+            // Update the chart
+            dataRateChart.update();
+        }
+    </script>
+</body>
+</html>
