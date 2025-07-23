@@ -3,14 +3,12 @@ import time
 from datetime import datetime
 
 devices = {
-    "Router": "192.168.1.1",
-    "PC1": "192.168.1.10",
-    "PC2": "192.168.1.11"
+    "Router": "192.168.100.1",
 }
 
 def ping(host):
     # -c 1: one ping, -W 1: 1 second timeout
-    response = os.system(f"ping -c 1 -W 1 {host} > /dev/null 2>&1")
+    response = os.system(f"ping -c 1 -I 192.168.100.10 {host} > /dev/null 2>&1")
     return response == 0
 
 def monitor():
