@@ -1,0 +1,5 @@
+{
+    "Router": {"ip": "192.168.1.1", "type": "router"},
+    "PC1": {"ip": "192.168.1.10", "type": "pc"},
+    "Printer1": {"ip": "192.168.1.15", "type": "printer"}
+  }  

@@ -209,28 +209,28 @@
                     </div>
                 </div>
                 
-                <!-- Issues -->
-                <div class="flex-1 bg-white rounded-lg shadow p-6 stats-issues">
-                    <div class="flex items-center">
-                        <div class="p-3 rounded-full bg-red-100 text-red-600">
-                            <i class="fas fa-exclamation-circle text-xl"></i>
-                        </div>
-                        <div class="ml-4">
-                            <h3 class="text-sm font-medium text-gray-500">Problèmes</h3>
-                            <p class="text-3xl font-semibold text-gray-900">0</p>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- Online -->
-                <div class="flex-1 bg-white rounded-lg shadow p-6 stats-online">
+                <div class="flex-1 bg-white rounded-lg shadow p-6">
                     <div class="flex items-center">
                         <div class="p-3 rounded-full bg-green-100 text-green-600">
                             <i class="fas fa-check-circle text-xl"></i>
                         </div>
                         <div class="ml-4">
                             <h3 class="text-sm font-medium text-gray-500">En ligne</h3>
-                            <p class="text-3xl font-semibold text-gray-900">0</p>
+                            <p id="online-equipment" class="text-3xl font-semibold text-gray-900">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Issues -->
+                <div class="flex-1 bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-red-100 text-red-600">
+                            <i class="fas fa-exclamation-circle text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-sm font-medium text-gray-500">Problèmes</h3>
+                            <p id="issues-equipment" class="text-3xl font-semibold text-gray-900">0</p>
                         </div>
                     </div>
                 </div>
@@ -246,10 +246,12 @@
                         <h2 class="text-lg font-medium text-gray-900">Liste des équipements</h2>
                         <p class="mt-1 text-sm text-gray-500"><span id="equipment-count">0 équipements</span></p>
                     </div>
-                    <div class="divide-y divide-gray-200 overflow-y-auto flex-1" id="equipment-list">
-                        <!-- Equipment items will be populated by JavaScript -->
-                        <div class="p-4 text-center text-gray-500">
-                            <p>Chargement des équipements...</p>
+                    <div class="overflow-hidden flex flex-col" style="height: 300px;">
+                        <div class="divide-y divide-gray-200 overflow-y-auto flex-1" id="equipment-list">
+                            <!-- Equipment items will be populated by JavaScript -->
+                            <div class="p-4 text-center text-gray-500">
+                                <p>Chargement des équipements...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -384,43 +386,70 @@
         
         // Filter equipment list based on selected filters
         function filterEquipmentList(ligne, atelier) {
+            console.log('Filtering equipment list with:', { ligne, atelier });
+            
+            // Update URL with filter parameters without page reload
+            const url = new URL(window.location);
+            if (ligne) {
+                url.searchParams.set('ligne', ligne);
+            } else {
+                url.searchParams.delete('ligne');
+            }
+            
+            if (atelier) {
+                url.searchParams.set('atelier', atelier);
+            } else {
+                url.searchParams.delete('atelier');
+            }
+            
+            window.history.pushState({}, '', url);
+            
+            // Update the equipment list display
             const equipmentList = document.getElementById('equipment-list');
             if (!equipmentList) return;
             
-            const items = equipmentList.querySelectorAll('.equipment-item');
+            const equipmentItems = equipmentList.querySelectorAll('.equipment-item');
             let visibleCount = 0;
             
-            items.forEach(item => {
+            equipmentItems.forEach(item => {
                 const itemLigne = item.getAttribute('data-ligne');
                 const itemAtelier = item.getAttribute('data-atelier');
                 
-                const showItem = 
-                    (!ligne || itemLigne === ligne) && 
-                    (!atelier || itemAtelier === atelier);
+                const matchesLigne = !ligne || itemLigne === ligne;
+                const matchesAtelier = !atelier || itemAtelier === atelier;
                 
-                item.style.display = showItem ? 'block' : 'none';
-                if (showItem) visibleCount++;
+                if (matchesLigne && matchesAtelier) {
+                    item.style.display = 'flex';
+                    visibleCount++;
+                    
+                    // If this is the first visible item and no equipment is selected, select it
+                    if (visibleCount === 1 && !currentEquipmentId) {
+                        currentEquipmentId = parseInt(item.getAttribute('data-id'));
+                        item.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
+                        updateChart();
+                    }
+                } else {
+                    item.style.display = 'none';
+                    item.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-500');
+                }
             });
             
             // Update the equipment count
-            const countElement = document.getElementById('equipment-count');
-            if (countElement) {
-                countElement.textContent = `${visibleCount} équipement${visibleCount !== 1 ? 's' : ''}`;
-            }
+            updateEquipmentCount(visibleCount);
             
-            // Update URL without page reload
-            const params = new URLSearchParams();
-            if (ligne) params.set('selected_ligne', ligne);
-            if (atelier) params.set('selected_atelier', atelier);
+            // Update dashboard stats with current filters
+            fetchEquipmentData().then(data => {
+                if (data && Array.isArray(data)) {
+                    updateDashboardStats(data);
+                }
+            });
             
-            const newUrl = `${window.location.pathname}?${params.toString()}`;
-            window.history.pushState({}, '', newUrl);
-            
-            // Update the chart if needed
-            if (visibleCount > 0) {
-                const firstVisible = equipmentList.querySelector('.equipment-item[style*="display: block"]');
+            // If no equipment is selected but there are visible items, select the first one
+            if (visibleCount > 0 && !document.querySelector('.equipment-item.bg-blue-50')) {
+                const firstVisible = equipmentList.querySelector('.equipment-item[style*="display: flex"]');
                 if (firstVisible) {
                     currentEquipmentId = parseInt(firstVisible.getAttribute('data-id'));
+                    firstVisible.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
                     updateChart();
                 }
             }
@@ -542,91 +571,81 @@
             // Get current filter values
             const selectedLigne = document.getElementById('ligne')?.value || '';
             const selectedAtelier = document.getElementById('atelier')?.value || '';
-            let visibleCount = 0;
             
-            // Create equipment items
-            equipment.forEach(eq => {
-                const statusClass = eq.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                const statusIcon = eq.status === 'online' ? 'check-circle' : 'exclamation-circle';
-                const statusText = eq.status === 'online' ? 'En ligne' : 'Hors ligne';
+            let visibleCount = 0;
+            let hasVisibleItems = false;
+            
+            equipment.forEach(item => {
+                // Skip if doesn't match filters
+                if (selectedLigne && item.ligne !== selectedLigne) return;
+                if (selectedAtelier && item.atelier !== selectedAtelier) return;
                 
-                // Format last checked time
-                let lastChecked = 'Inconnue';
-                if (eq.last_checked) {
-                    const date = new Date(eq.last_checked);
-                    if (!isNaN(date.getTime())) {
-                        lastChecked = date.toLocaleTimeString('fr-FR');
-                    }
-                }
-                
-                // Check if item should be visible based on filters
-                const isVisible = 
-                    (!selectedLigne || eq.ligne === selectedLigne) && 
-                    (!selectedAtelier || eq.atelier === selectedAtelier);
-                
-                if (isVisible) visibleCount++;
+                visibleCount++;
+                hasVisibleItems = true;
                 
                 const equipmentItem = document.createElement('div');
-                equipmentItem.className = 'equipment-item p-4 border-b border-gray-200 hover:bg-gray-50 cursor-pointer';
-                equipmentItem.style.display = isVisible ? 'block' : 'none';
-                equipmentItem.setAttribute('data-id', eq.id);
-                equipmentItem.setAttribute('data-ligne', eq.ligne || '');
-                equipmentItem.setAttribute('data-atelier', eq.atelier || '');
+                equipmentItem.className = `equipment-item p-4 hover:bg-gray-50 cursor-pointer border-l-4 ${item.status === 'online' ? 'border-green-500' : 'border-red-500'} ${item.id === currentEquipmentId ? 'bg-blue-50' : ''}`;
+                equipmentItem.style.minHeight = '100px'; // Ensure consistent height for each item
+                equipmentItem.setAttribute('data-id', item.id);
+                equipmentItem.setAttribute('data-ligne', item.ligne || '');
+                equipmentItem.setAttribute('data-atelier', item.atelier || '');
                 
-                // Add click handler to select equipment
-                equipmentItem.addEventListener('click', () => {
-                    currentEquipmentId = eq.id;
-                    updateChart();
-                    
-                    // Highlight selected equipment
-                    document.querySelectorAll('.equipment-item').forEach(item => {
-                        item.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-500');
-                    });
-                    equipmentItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
-                });
+                const lastChecked = item.last_checked ? new Date(item.last_checked).toLocaleTimeString() : 'Inconnue';
                 
                 equipmentItem.innerHTML = `
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0 w-10 h-10 rounded-full ${eq.status === 'online' ? 'bg-green-100' : 'bg-red-100'} flex items-center justify-center">
-                            <i class="fas fa-${eq.type === 'server' ? 'server' : 'network-wired'} ${eq.status === 'online' ? 'text-green-600' : 'text-red-600'}"></i>
+                    <div class="flex-shrink-0">
+                        <div class="h-10 w-10 rounded-full ${item.status === 'online' ? 'bg-green-100' : 'bg-red-100'} flex items-center justify-center">
+                            <i class="fas ${item.status === 'online' ? 'fa-check text-green-600' : 'fa-times text-red-600'}"></i>
                         </div>
-                        <div class="ml-4 flex-1 min-w-0">
-                            <div class="flex justify-between items-center">
-                                <h3 class="text-sm font-medium text-gray-900 truncate">${eq.name || 'Équipement sans nom'}</h3>
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
-                                    <i class="fas fa-${statusIcon} mr-1"></i>
-                                    ${statusText}
-                                </span>
-                            </div>
-                            <div class="mt-1 text-sm text-gray-500">
-                                <div class="flex justify-between">
-                                    <span>Débit: <span class="font-medium">${eq.data_rate || 0} Mbps</span></span>
-                                    <span class="text-xs text-gray-400">${lastChecked}</span>
-                                </div>
-                                ${eq.ligne || eq.atelier ? `
-                                <div class="text-xs text-gray-400 mt-1">
-                                    ${eq.ligne ? `<span class="inline-block bg-gray-100 rounded px-2 py-0.5">${eq.ligne}</span>` : ''}
-                                    ${eq.atelier ? `<span class="inline-block bg-gray-100 rounded px-2 py-0.5 ml-1">${eq.atelier}</span>` : ''}
-                                </div>
-                                ` : ''}
-                            </div>
+                    </div>
+                    <div class="ml-4 flex-1">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-medium text-gray-900">${item.name || 'Équipement sans nom'}</h3>
+                            <span class="text-xs text-gray-500">${item.ligne || ''} ${item.atelier ? ' - ' + item.atelier : ''}</span>
+                        </div>
+                        <div class="mt-1 text-sm text-gray-500">
+                            <div>Débit: <span class="font-medium">${item.data_rate ? item.data_rate.toFixed(2) + ' Mb/s' : 'N/A'}</span></div>
+                            <div>Dernière vérification: <span class="font-medium">${lastChecked}</span></div>
                         </div>
                     </div>
                 `;
                 
+                // Add click handler to select this equipment
+                equipmentItem.addEventListener('click', () => {
+                    // Remove highlight from all items
+                    document.querySelectorAll('.equipment-item').forEach(el => {
+                        el.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-500');
+                    });
+                    
+                    // Highlight selected item
+                    equipmentItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
+                    
+                    // Update chart with selected equipment data
+                    currentEquipmentId = item.id;
+                    updateChart();
+                });
+                
                 container.appendChild(equipmentItem);
             });
+            
+            // Show no results message if no items match filters
+            if (!hasVisibleItems) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">Aucun équipement ne correspond aux filtres sélectionnés</p>';
+            }
             
             // Update the equipment count
             updateEquipmentCount(visibleCount);
             
-            // Select first equipment by default if none selected
-            if (equipment.length > 0 && !currentEquipmentId) {
-                currentEquipmentId = equipment[0].id;
-                const firstItem = container.querySelector('.equipment-item');
-                if (firstItem) {
-                    firstItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
-                    updateChart();
+            // If current equipment is not visible, select the first visible one
+            if (hasVisibleItems) {
+                const currentItem = container.querySelector(`.equipment-item[data-id="${currentEquipmentId}"]`);
+                if (!currentItem) {
+                    const firstItem = container.querySelector('.equipment-item');
+                    if (firstItem) {
+                        firstItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
+                        currentEquipmentId = parseInt(firstItem.getAttribute('data-id'));
+                        updateChart();
+                    }
                 }
             }
         }
@@ -643,34 +662,43 @@
         function updateDashboardStats(equipment) {
             if (!equipment || !Array.isArray(equipment)) {
                 console.warn('Invalid equipment data:', equipment);
-                return;
-            }
-            
-            if (!equipment || !Array.isArray(equipment)) {
-                console.warn('Invalid equipment data:', equipment);
-                return;
+                return { total: 0, online: 0, issues: 0 };
             }
             
             try {
-                const total = equipment.length;
-                const online = equipment.filter(eq => eq.status === 'online').length;
+                // Get current filter values
+                const selectedLigne = document.getElementById('ligne')?.value || '';
+                const selectedAtelier = document.getElementById('atelier')?.value || '';
+                
+                // Filter equipment based on selected filters
+                let filteredEquipment = [...equipment];
+                
+                if (selectedLigne) {
+                    filteredEquipment = filteredEquipment.filter(eq => eq.ligne === selectedLigne);
+                }
+                
+                if (selectedAtelier) {
+                    filteredEquipment = filteredEquipment.filter(eq => eq.atelier === selectedAtelier);
+                }
+                
+                const total = filteredEquipment.length;
+                const online = filteredEquipment.filter(eq => eq.status === 'online').length;
                 const issues = total - online;
                 
-                // Update the stats cards in the template
-                const totalElement = document.getElementById('total-equipment') || 
-                                   document.querySelector('.stats-total .text-3xl');
-                const onlineElement = document.querySelector('.stats-online .text-3xl');
-                const issuesElement = document.querySelector('.stats-issues .text-3xl');
+                // Update the stats cards
+                const totalElement = document.getElementById('total-equipment');
+                const onlineElement = document.getElementById('online-equipment');
+                const issuesElement = document.getElementById('issues-equipment');
                 
                 if (totalElement) totalElement.textContent = total;
                 if (onlineElement) onlineElement.textContent = online;
                 if (issuesElement) issuesElement.textContent = issues;
                 
-                console.log('Dashboard stats updated:', { total, online, issues });
+                console.log('Dashboard stats updated:', { total, online, issues, filters: { selectedLigne, selectedAtelier } });
                 return { total, online, issues };
             } catch (error) {
                 console.error('Error updating dashboard stats:', error);
-                return null;
+                return { total: 0, online: 0, issues: 0 };
             }
         }
 
