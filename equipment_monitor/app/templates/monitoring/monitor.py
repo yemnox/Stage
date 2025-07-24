@@ -1,10 +1,14 @@
 import os
 import time
+import json
 from datetime import datetime
 
-devices = {
-    "Router": "192.168.100.1",
-}
+# Load devices from the JSON file
+def load_devices():
+    with open("equipment_monitor/app/templates/monitoring/devices.json", "r") as file:
+        return json.load(file)
+
+devices = load_devices()
 
 def ping(host):
     # -c 1: one ping, -W 1: 1 second timeout
