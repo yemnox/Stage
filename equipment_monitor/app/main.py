@@ -13,12 +13,22 @@ from datetime import datetime, timedelta
 import asyncio
 import platform
 import getpass
+import sys
+from pathlib import Path
+
+# Add the parent directory to the path so we can import from app.routers
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from .models import User, Equipment, dummy_users, dummy_equipment, Role, Permission
+from .routers import device_routes
 from . import admin
 from fastapi import HTTPException, status
 
 # Initialize app
 app = FastAPI(title="Equipment Monitoring Dashboard")
+
+# Include device monitoring routes
+app.include_router(device_routes.router)
 
 # Store sessions in app state
 app.state.sessions = {}

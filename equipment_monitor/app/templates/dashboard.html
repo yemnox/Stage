@@ -160,6 +160,16 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                <p class="mt-4 text-gray-700">Chargement du tableau de bord...</p>
+            </div>
+        </div>
+        
+        <!-- Error Container -->
+        <div id="error-container" class="mb-6" style="display: none;"></div>
         <!-- Top Bar -->
         <div class="flex flex-col md:flex-row gap-6 mb-8">
             <!-- Filters -->
@@ -278,12 +288,11 @@
     <script>
         // Global variables
         let dataRateChart;
-        let availableFilters = {
-            lignes: [],
-            ateliers: {}
-        };
-        let currentEquipmentId = 1;
+        let currentEquipmentId = null;
+        let allEquipment = [];
         let updateInterval;
+        let isConnected = true;
+        let deviceStatus = {}; // Store device status
 
         // Update atelier dropdown based on selected ligne
         function updateAtelierDropdown(selectedLigne, selectedAtelier = '') {
@@ -455,18 +464,81 @@
             }
         }
         
+        // Show loading state
+        function showLoading(show) {
+            const loadingElement = document.getElementById('loading-indicator');
+            if (loadingElement) {
+                loadingElement.style.display = show ? 'block' : 'none';
+            }
+        }
+        
         // Initialize the dashboard
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize UI elements
             updateCurrentTime();
             setInterval(updateCurrentTime, 1000);
             
-            // Initialize filters and then fetch equipment data
-            fetchFilters().then(() => {
-                fetchEquipmentData();
-                
-                // Refresh data every 5 seconds
-                updateInterval = setInterval(fetchEquipmentData, 5000);
-            });
+            // Show loading indicator
+            showLoading(true);
+            
+            // Initialize filters and fetch initial data
+            const initDashboard = async () => {
+                try {
+                    // First, load filters
+                    await fetchFilters();
+                    
+                    // Then load device status and equipment data in parallel
+                    const [statusData, equipmentData] = await Promise.all([
+                        fetchDeviceStatus(),
+                        fetchEquipmentData()
+                    ]);
+                    
+                    console.log('Dashboard initialized:', {
+                        devices: statusData.length,
+                        equipment: equipmentData.length
+                    });
+                    
+                    // Set up auto-refresh every 5 seconds
+                    updateInterval = setInterval(async () => {
+                        try {
+                            await fetchDeviceStatus();
+                            await fetchEquipmentData();
+                        } catch (error) {
+                            console.error('Error during auto-refresh:', error);
+                        }
+                    }, 5000);
+                    
+                } catch (error) {
+                    console.error('Error initializing dashboard:', error);
+                    // Show error message to user
+                    const errorContainer = document.getElementById('error-container');
+                    if (errorContainer) {
+                        errorContainer.innerHTML = `
+                            <div class="bg-red-50 border-l-4 border-red-500 p-4">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        <i class="fas fa-exclamation-circle text-red-600"></i>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm text-red-700">
+                                            Erreur de chargement des données. Vérifiez votre connexion et rafraîchissez la page.
+                                            <br>
+                                            <small>${error.message || 'Erreur inconnue'}</small>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        errorContainer.style.display = 'block';
+                    }
+                } finally {
+                    // Hide loading indicator
+                    showLoading(false);
+                }
+            };
+            
+            // Start initialization
+            initDashboard();
         });
 
         // Update current time
@@ -491,165 +563,260 @@
 
         // Fetch equipment data from the API
         async function fetchEquipmentData() {
-            console.log('Fetching equipment data...');
+            try {
+                const response = await fetch('/api/equipment');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                
+                // Merge device status with equipment data
+                const mergedData = data.map(equip => {
+                    const status = deviceStatus[equip.name] || 'offline';
+                    return {
+                        ...equip,
+                        status: status,
+                        last_checked: new Date().toISOString()
+                    };
+                });
+                
+                allEquipment = mergedData;
+                updateEquipmentList(mergedData);
+                updateDashboardStats(mergedData);
+                
+                // If no equipment is selected, select the first one
+                if (mergedData.length > 0 && !currentEquipmentId) {
+                    currentEquipmentId = mergedData[0].id;
+                    updateChart();
+                }
+                
+                updateConnectionStatus(true);
+                return mergedData;
+            } catch (error) {
+                console.error('Error fetching equipment data:', error);
+                updateConnectionStatus(false);
+                return [];
+            }
+        }
+        
+        // Fetch device status from the monitoring system
+        async function fetchDeviceStatus() {
             try {
                 const startTime = performance.now();
-                const response = await fetch('/api/equipment', {
+                const response = await fetch('/api/devices/status', {
                     headers: {
                         'Cache-Control': 'no-cache',
                         'Pragma': 'no-cache'
                     }
                 });
-                const endTime = performance.now();
-                console.log(`API response received in ${(endTime - startTime).toFixed(2)}ms`);
                 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('API Error Response:', errorText);
-                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                const data = await response.json();
-                console.log('Equipment data received:', data);
+                const statusData = await response.json();
+                const endTime = performance.now();
+                console.log(`Fetched device status in ${(endTime - startTime).toFixed(2)}ms`);
                 
-                if (!Array.isArray(data)) {
-                    throw new Error('Expected an array of equipment but got:', typeof data);
-                }
+                // Store previous status for comparison
+                const previousStatus = { ...deviceStatus };
+                let hasChanges = false;
                 
-                updateEquipmentList(data);
-                updateDashboardStats(data);
+                // Update device status and check for changes
+                const newDeviceStatus = {};
+                statusData.forEach(device => {
+                    newDeviceStatus[device.name] = device.status;
+                    if (previousStatus[device.name] !== device.status) {
+                        console.log(`Status changed for ${device.name}: ${previousStatus[device.name]} -> ${device.status}`);
+                        hasChanges = true;
+                    }
+                });
                 
-                // Update the equipment selector if it's empty
-                const selector = document.getElementById('equipment-selector');
-                if (selector && selector.options.length <= 1) {  // Check if selector exists and has 0 or 1 option
-                    // Clear existing options except the first one
-                    while (selector.options.length > 1) {
-                        selector.remove(1);
+                // Only update if there are changes
+                if (hasChanges || Object.keys(previousStatus).length === 0) {
+                    deviceStatus = newDeviceStatus;
+                    
+                    // Update the equipment list to reflect the new status
+                    if (allEquipment.length > 0) {
+                        updateEquipmentList(allEquipment);
+                        updateDashboardStats(allEquipment);
+                        
+                        // If we have a selected equipment, update its chart
+                        if (currentEquipmentId) {
+                            const currentEq = allEquipment.find(eq => eq.id === currentEquipmentId);
+                            if (currentEq) {
+                                updateChart();
+                            }
+                        }
                     }
                     
-                    data.forEach(eq => {
-                        const option = document.createElement('option');
-                        option.value = eq.id;
-                        option.textContent = eq.name || `Equipment ${eq.id}`;
-                        selector.appendChild(option);
-                    });
-                    
-                    if (data.length > 0) {
-                        currentEquipmentId = data[0].id;
-                        selector.value = currentEquipmentId;
-                    }
+                    // Show notification for status changes
+                    showStatusChangeNotification(statusData, previousStatus);
                 }
                 
-                // Update the chart with the latest data
-                console.log('Updating chart with equipment ID:', currentEquipmentId);
-                await updateChart();
-                updateConnectionStatus(true);
+                return statusData;
                 
             } catch (error) {
-                console.error('Error in fetchEquipmentData:', error);
+                console.error('Error fetching device status:', error);
                 updateConnectionStatus(false);
+                return [];
             }
-            
-            // Schedule next update
-            setTimeout(fetchEquipmentData, 5000);
         }
         
+        // Show notification when device status changes
+        function showStatusChangeNotification(currentStatus, previousStatus) {
+            // Skip if no previous status (first load)
+            if (!previousStatus || Object.keys(previousStatus).length === 0) return;
+            
+            // Check for status changes and show notifications
+            currentStatus.forEach(device => {
+                const prevStatus = previousStatus[device.name];
+                if (prevStatus && prevStatus !== device.status) {
+                    const statusText = device.status === 'online' ? 'en ligne' : 'hors ligne';
+                    const statusClass = device.status === 'online' ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500';
+                    
+                    // Create notification element
+                    const notification = document.createElement('div');
+                    notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg border-l-4 ${statusClass} max-w-sm z-50 transform transition-all duration-300 translate-x-0`;
+                    notification.innerHTML = `
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <i class="fas ${device.status === 'online' ? 'fa-check-circle text-green-600' : 'fa-exclamation-circle text-red-600'}"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium">
+                                    ${device.name} est maintenant ${statusText}
+                                </h3>
+                                <p class="text-sm text-gray-600 mt-1">
+                                    ${new Date().toLocaleTimeString()}
+                                </p>
+                            </div>
+                            <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add to notifications container or create one
+                    let container = document.getElementById('notifications-container');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.id = 'notifications-container';
+                        container.className = 'fixed bottom-4 right-4 space-y-2 z-50';
+                        document.body.appendChild(container);
+                    }
+                    
+                    // Add new notification
+                    container.insertBefore(notification, container.firstChild);
+                    
+                    // Auto-remove after 5 seconds
+                    setTimeout(() => {
+                        notification.style.transform = 'translateX(120%)';
+                        setTimeout(() => notification.remove(), 300);
+                    }, 5000);
+                }
+            });
+        }
+
         // Update the equipment list
         function updateEquipmentList(equipment) {
             const container = document.getElementById('equipment-list');
             if (!container) return;
             
-            // Clear loading message if present
-            container.innerHTML = '';
+            // Store scroll position to restore it after update
+            const scrollPosition = container.scrollTop;
             
-            if (!equipment || !Array.isArray(equipment) || equipment.length === 0) {
+            container.innerHTML = ''; // Clear existing content
+            
+            if (!equipment || equipment.length === 0) {
                 container.innerHTML = '<p class="text-gray-500 text-center py-4">Aucun équipement trouvé</p>';
                 updateEquipmentCount(0);
                 return;
             }
             
-            // Get current filter values
             const selectedLigne = document.getElementById('ligne')?.value || '';
             const selectedAtelier = document.getElementById('atelier')?.value || '';
             
             let visibleCount = 0;
-            let hasVisibleItems = false;
+            let hasSelectedItem = false;
             
-            equipment.forEach(item => {
-                // Skip if doesn't match filters
+            // Sort equipment: online first, then by name
+            const sortedEquipment = [...equipment].sort((a, b) => {
+                const statusA = deviceStatus[a.name] === 'online' ? 0 : 1;
+                const statusB = deviceStatus[b.name] === 'online' ? 0 : 1;
+                if (statusA !== statusB) return statusA - statusB;
+                return (a.name || '').localeCompare(b.name || '');
+            });
+            
+            sortedEquipment.forEach(item => {
+                // Skip if filters don't match
                 if (selectedLigne && item.ligne !== selectedLigne) return;
                 if (selectedAtelier && item.atelier !== selectedAtelier) return;
                 
                 visibleCount++;
-                hasVisibleItems = true;
+                
+                const isOnline = (deviceStatus[item.name] || item.status) === 'online';
+                const isSelected = item.id === currentEquipmentId;
+                if (isSelected) hasSelectedItem = true;
                 
                 const equipmentItem = document.createElement('div');
-                equipmentItem.className = `equipment-item p-4 hover:bg-gray-50 cursor-pointer border-l-4 ${item.status === 'online' ? 'border-green-500' : 'border-red-500'} ${item.id === currentEquipmentId ? 'bg-blue-50' : ''}`;
-                equipmentItem.style.minHeight = '100px'; // Ensure consistent height for each item
+                equipmentItem.className = `equipment-item p-4 hover:bg-gray-50 cursor-pointer border-l-4 ${isOnline ? 'border-green-500' : 'border-red-500'} ${isSelected ? 'bg-blue-50' : ''}`;
                 equipmentItem.setAttribute('data-id', item.id);
                 equipmentItem.setAttribute('data-ligne', item.ligne || '');
                 equipmentItem.setAttribute('data-atelier', item.atelier || '');
+                equipmentItem.style.minHeight = '100px'; // Ensure consistent height
                 
-                const lastChecked = item.last_checked ? new Date(item.last_checked).toLocaleTimeString() : 'Inconnue';
+                const lastChecked = item.last_checked ? new Date(item.last_checked).toLocaleTimeString() : 'Maintenant';
                 
                 equipmentItem.innerHTML = `
-                    <div class="flex-shrink-0">
-                        <div class="h-10 w-10 rounded-full ${item.status === 'online' ? 'bg-green-100' : 'bg-red-100'} flex items-center justify-center">
-                            <i class="fas ${item.status === 'online' ? 'fa-check text-green-600' : 'fa-times text-red-600'}"></i>
-                        </div>
-                    </div>
-                    <div class="ml-4 flex-1">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-sm font-medium text-gray-900">${item.name || 'Équipement sans nom'}</h3>
-                            <span class="text-xs text-gray-500">${item.ligne || ''} ${item.atelier ? ' - ' + item.atelier : ''}</span>
-                        </div>
-                        <div class="mt-1 text-sm text-gray-500">
-                            <div>Débit: <span class="font-medium">${item.data_rate ? item.data_rate.toFixed(2) + ' Mb/s' : 'N/A'}</span></div>
-                            <div>Dernière vérification: <span class="font-medium">${lastChecked}</span></div>
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-medium text-gray-900">${item.name || 'Équipement sans nom'}</h3>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isOnline ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                    ${isOnline ? 'En ligne' : 'Hors ligne'}
+                                </span>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-1">${item.ligne || ''}${item.atelier ? ' - ' + item.atelier : ''}</p>
+                            <div class="mt-2 text-xs text-gray-500">
+                                <p>Dernière vérification: ${lastChecked}</p>
+                                ${item.data_rate ? `<p>Débit: ${item.data_rate.toFixed(2)} Mb/s</p>` : ''}
+                            </div>
                         </div>
                     </div>
                 `;
                 
-                // Add click handler to select this equipment
                 equipmentItem.addEventListener('click', () => {
-                    // Remove highlight from all items
-                    document.querySelectorAll('.equipment-item').forEach(el => {
-                        el.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-500');
-                    });
-                    
-                    // Highlight selected item
-                    equipmentItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
-                    
-                    // Update chart with selected equipment data
                     currentEquipmentId = item.id;
-                    updateChart();
+                    updateEquipmentList(equipment); // Re-render to update selection
+                    if (dataRateChart) {
+                        updateChart();
+                    } else {
+                        createChart(item);
+                    }
                 });
                 
                 container.appendChild(equipmentItem);
             });
             
-            // Show no results message if no items match filters
-            if (!hasVisibleItems) {
-                container.innerHTML = '<p class="text-gray-500 text-center py-4">Aucun équipement ne correspond aux filtres sélectionnés</p>';
-            }
-            
-            // Update the equipment count
-            updateEquipmentCount(visibleCount);
-            
-            // If current equipment is not visible, select the first visible one
-            if (hasVisibleItems) {
-                const currentItem = container.querySelector(`.equipment-item[data-id="${currentEquipmentId}"]`);
-                if (!currentItem) {
-                    const firstItem = container.querySelector('.equipment-item');
-                    if (firstItem) {
-                        firstItem.classList.add('bg-blue-50', 'border-l-4', 'border-blue-500');
-                        currentEquipmentId = parseInt(firstItem.getAttribute('data-id'));
+            // If the selected item is no longer visible, select the first visible one
+            if (!hasSelectedItem && visibleCount > 0) {
+                const firstItem = container.querySelector('.equipment-item');
+                if (firstItem) {
+                    currentEquipmentId = parseInt(firstItem.getAttribute('data-id'));
+                    firstItem.classList.add('bg-blue-50');
+                    if (dataRateChart) {
                         updateChart();
                     }
                 }
             }
+            
+            // Restore scroll position
+            container.scrollTop = scrollPosition;
+            
+            updateEquipmentCount(visibleCount);
         }
-        
+
         // Update the equipment count display
         function updateEquipmentCount(count) {
             const countElement = document.getElementById('equipment-count');
@@ -666,13 +833,12 @@
             }
             
             try {
-                // Get current filter values
                 const selectedLigne = document.getElementById('ligne')?.value || '';
                 const selectedAtelier = document.getElementById('atelier')?.value || '';
                 
-                // Filter equipment based on selected filters
                 let filteredEquipment = [...equipment];
                 
+                // Apply filters
                 if (selectedLigne) {
                     filteredEquipment = filteredEquipment.filter(eq => eq.ligne === selectedLigne);
                 }
@@ -682,26 +848,91 @@
                 }
                 
                 const total = filteredEquipment.length;
-                const online = filteredEquipment.filter(eq => eq.status === 'online').length;
+                const online = filteredEquipment.filter(eq => (deviceStatus[eq.name] || eq.status) === 'online').length;
                 const issues = total - online;
                 
-                // Update the stats cards
+                // Update the stats cards with animation
                 const totalElement = document.getElementById('total-equipment');
                 const onlineElement = document.getElementById('online-equipment');
                 const issuesElement = document.getElementById('issues-equipment');
                 
-                if (totalElement) totalElement.textContent = total;
-                if (onlineElement) onlineElement.textContent = online;
-                if (issuesElement) issuesElement.textContent = issues;
+                // Animate the counter
+                const animateValue = (element, start, end, duration = 800) => {
+                    if (start === end) return;
+                    const range = end - start;
+                    const startTime = performance.now();
+                    
+                    const updateCounter = (currentTime) => {
+                        const elapsed = currentTime - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        const current = Math.floor(start + range * progress);
+                        
+                        if (element) {
+                            element.textContent = current.toLocaleString();
+                            
+                            // Add/remove pulse effect for changes
+                            if (progress < 1) {
+                                element.classList.add('animate-pulse');
+                                requestAnimationFrame(updateCounter);
+                            } else {
+                                element.classList.remove('animate-pulse');
+                            }
+                        }
+                    };
+                    
+                    requestAnimationFrame(updateCounter);
+                };
                 
-                console.log('Dashboard stats updated:', { total, online, issues, filters: { selectedLigne, selectedAtelier } });
+                // Update values with animation
+                if (totalElement) {
+                    const currentTotal = parseInt(totalElement.textContent) || 0;
+                    animateValue(totalElement, currentTotal, total);
+                }
+                
+                if (onlineElement) {
+                    const currentOnline = parseInt(onlineElement.textContent) || 0;
+                    animateValue(onlineElement, currentOnline, online);
+                    
+                    // Update color based on status
+                    const card = onlineElement.closest('.bg-white');
+                    if (card) {
+                        card.classList.remove('bg-green-50', 'bg-red-50', 'bg-yellow-50');
+                        if (online === total) {
+                            card.classList.add('bg-green-50');
+                        } else if (online === 0) {
+                            card.classList.add('bg-red-50');
+                        } else {
+                            card.classList.add('bg-yellow-50');
+                        }
+                    }
+                }
+                
+                if (issuesElement) {
+                    const currentIssues = parseInt(issuesElement.textContent) || 0;
+                    animateValue(issuesElement, currentIssues, issues);
+                    
+                    // Update color based on status
+                    const card = issuesElement.closest('.bg-white');
+                    if (card) {
+                        card.classList.remove('bg-green-50', 'bg-red-50', 'bg-yellow-50');
+                        if (issues === 0) {
+                            card.classList.add('bg-green-50');
+                        } else if (issues === total) {
+                            card.classList.add('bg-red-50');
+                        } else {
+                            card.classList.add('bg-yellow-50');
+                        }
+                    }
+                }
+                
                 return { total, online, issues };
+                
             } catch (error) {
                 console.error('Error updating dashboard stats:', error);
                 return { total: 0, online: 0, issues: 0 };
             }
         }
-
+        
         // Update the chart with data for the selected equipment
         async function updateChart() {
             if (!currentEquipmentId) {
