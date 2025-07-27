@@ -1,3 +1,6 @@
+#MongoDB
+pymongo==4.3.3
+
 # Core FastAPI
 fastapi>=0.100.0,<1.0.0
 uvicorn[standard]>=0.20.0,<1.0.0

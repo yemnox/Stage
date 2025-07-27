@@ -15,11 +15,17 @@ import platform
 import getpass
 import sys
 from pathlib import Path
-
+# Add these imports at the top with other imports
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from app.templates.monitoring.monitor import monitor, run_monitoring
+import asyncio
 # Add the parent directory to the path so we can import from app.routers
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from .models import User, Equipment, dummy_users, dummy_equipment, Role, Permission
+from .models import User, Role, Permission
+from .templates.monitoring.monitor import monitor, run_monitoring
 from .routers import device_routes
 from . import admin
 from fastapi import HTTPException, status
@@ -524,7 +530,7 @@ async def get_filters():
         "ateliers": ATELIERS
     }
 
-@app.get("/api/equipment/{equipment_id}")
+"""@app.get("/api/equipment/{equipment_id}")
 async def get_equipment_data(equipment_id: int):
     try:
         equipment = next((eq for eq in equipments if eq.id == equipment_id), None)
@@ -567,6 +573,8 @@ async def update_equipment_data():
         logger.error(f"Error in update_equipment_data: {str(e)}")
         raise
 
+"""
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(update_equipment_data())
@@ -574,3 +582,83 @@ async def startup_event():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=4000, reload=True)
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, ligne: Optional[str] = None, atelier: Optional[str] = None):
+    """Dashboard page showing equipment status."""
+    try:
+        # Get the current user
+        user = await get_current_user(request)
+        if not user:
+            return RedirectResponse(url="/login")
+            
+        # Get device status
+        devices = monitor.get_status()
+        
+        # Filter devices based on ligne and atelier if provided
+        if ligne:
+            devices = [d for d in devices if d.get("ligne") == ligne]
+        if atelier:
+            devices = [d for d in devices if d.get("atelier") == atelier]
+            
+        # Get available filters
+        filters = {
+            "lignes": sorted(list(set(d.get("ligne") for d in devices if d.get("ligne")))),
+            "ateliers": sorted(list(set(d.get("atelier") for d in devices if d.get("atelier"))))
+        }
+        
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "current_user": user,
+            "devices": devices,
+            "filters": filters,
+            "selected_ligne": ligne,
+            "selected_atelier": atelier
+        })
+        
+    except Exception as e:
+        logger.error(f"Dashboard error: {str(e)}")
+        return RedirectResponse(url="/login")
+
+async def update_equipment_data():
+    """Background task to update equipment data periodically."""
+    while True:
+        try:
+            # The monitor is already updating the data in the background
+            # We just need to wait for the next update
+            await asyncio.sleep(5)  # Update every 5 seconds
+        except asyncio.CancelledError:
+            # Handle cancellation
+            break
+        except Exception as e:
+            logger.error(f"Error in update_equipment_data: {str(e)}")
+            await asyncio.sleep(5)  # Wait before retrying
+        
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks when the application starts."""
+    # Start the monitoring loop
+    asyncio.create_task(run_monitoring())
+    # Start the equipment data update task
+    asyncio.create_task(update_equipment_data())
+
+class EquipmentCreate(BaseModel):
+    name: str
+    ip_address: str
+    ligne: str
+    atelier: str
+
+@app.get("/api/equipment")
+async def get_equipment():
+    return [eq.to_dict() for eq in Equipment.get_all()]
+
+@app.post("/api/equipment")
+async def create_equipment(equipment: EquipmentCreate):
+    new_equip = Equipment(
+        name=equipment.name,
+        ip_address=equipment.ip_address,
+        ligne=equipment.ligne,
+        atelier=equipment.atelier
+    )
+    new_equip.save()
+    return {"id": new_equip.id, **new_equip.to_dict()}
